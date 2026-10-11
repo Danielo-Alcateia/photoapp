@@ -141,6 +141,9 @@ if __name__ == "__main__":
 
     # Pré-carrega LaMa e Real-ESRGAN em segundo plano (não bloqueia o servidor).
     # Os pesos já baixados tornam o primeiro uso instantâneo.
+    # DESLIGADO por padrão na nuvem: em máquinas com pouca RAM (ex.: Render
+    # Free = 512 MB) carregar os dois modelos de uma vez estoura a memória e
+    # derruba o container. Ligue com PHOTOAPP_WARMUP=1 só onde houver memória.
     def _warmup():
         try:
             from processors.inpainting import get_lama
@@ -153,7 +156,8 @@ if __name__ == "__main__":
         except Exception as exc:  # pragma: no cover
             print(f"[warmup] aviso (será carregado sob demanda): {exc}")
 
-    threading.Thread(target=_warmup, daemon=True).start()
+    if os.environ.get("PHOTOAPP_WARMUP", "0") == "1":
+        threading.Thread(target=_warmup, daemon=True).start()
 
     print(f"\n  PhotoApp PWA  ->  http://localhost:{port}\n")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
