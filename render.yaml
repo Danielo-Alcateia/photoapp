@@ -8,8 +8,9 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /
-    port: 10000
     envVars:
+      - key: PORT
+        value: "10000"
       - key: PHOTOAPP_MAX_DIM
         value: "2400"
       - key: PHOTOAPP_UPSCALE
