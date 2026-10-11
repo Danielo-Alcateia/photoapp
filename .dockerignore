@@ -1,0 +1,13 @@
+# Contexto de build do Docker: só o necessário.
+.venv/
+.git/
+__pycache__/
+*.pyc
+backend/models/*
+!backend/models/.gitkeep
+node_modules/
+uploads/
+temp/
+*.log
+.gitignore
+README.md

@@ -1,0 +1,16 @@
+# Render Blueprint - cria o serviço web na plataforma gratuita.
+# Basta conectar este repositório no Render (New -> Blueprint).
+services:
+  - type: web
+    name: photoapp
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    port: 10000
+    envVars:
+      - key: PHOTOAPP_MAX_DIM
+        value: "2400"
+      - key: PHOTOAPP_UPSCALE
+        value: "2"

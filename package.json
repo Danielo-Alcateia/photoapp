@@ -1,0 +1,12 @@
+{
+  "name": "photoapp-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA de edição cirúrgica de fotos (marca d'água, iluminação, resolução) com backend Python não-generativo.",
+  "scripts": {
+    "icons": "node scripts/generate-icons.js",
+    "preview": "node scripts/serve-frontend.js",
+    "dev": "node scripts/serve-frontend.js"
+  },
+  "license": "MIT"
+}

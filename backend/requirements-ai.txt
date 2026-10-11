@@ -1,0 +1,19 @@
+# Modelos de IA de CÓDIGO ABERTO (opcional, recomendado).
+#
+# ATENÇÃO - POLÍTICA DE FIDELIDADE FISIONÔMICA:
+# Este projeto usa APENAS modelos de inpainting de textura (LaMa) e de
+# super-resolução de textura (Real-ESRGAN/RRDBNet, reimplementado em
+# processors/rrdbnet.py usando só PyTorch).
+#
+# NÃO instalamos os pacotes `realesrgan`/`basicsr` do PyPI porque eles
+# ARRASTAM o `gfpgan` (reconstrução facial generativa, PROIBIDA aqui).
+#
+# Instalação (o script scripts\install.ps1 -AI já faz isso na ordem certa):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-ai.txt
+#
+# GPU NVIDIA (opcional, muito mais rápido):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Inpainting de textura (preenche a marca d'água com a vizinhança)
+simple-lama-inpainting==0.1.2

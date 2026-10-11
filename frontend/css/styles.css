@@ -1,0 +1,82 @@
+/* Ajustes finos que o Tailwind utilitário não cobre bem. */
+
+:root {
+  color-scheme: dark;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body {
+  height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(56, 189, 248, 0.12), transparent 60%),
+    #0b1120;
+}
+
+/* Área da imagem: mantém a proporção e centraliza. */
+.stage-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#maskCanvas {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  cursor: crosshair;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+
+/* Barra de ações respeitando o "notch" do celular. */
+.safe-bottom {
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
+
+/* Spinner do overlay de carregamento. */
+.spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  border: 3px solid rgba(148, 163, 184, 0.25);
+  border-top-color: #38bdf8;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Range do pincel */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #38bdf8, #a78bfa);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #0ea5e9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

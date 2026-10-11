@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Model weights (downloaded on demand, large files)
+backend/models/*
+!backend/models/.gitkeep
+
+# Node
+node_modules/
+
+# Uploads / temp
+uploads/
+temp/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,8 @@
+# Núcleo do backend.
+# Estas bibliotecas bastam para Iluminação e para o fallback NÃO-generativo
+# de Remoção de Marca d'Água e de Resolução.
+Flask==3.0.3
+flask-cors==4.0.1
+pillow==9.5.0
+numpy==1.26.4
+opencv-python==4.11.0.86
