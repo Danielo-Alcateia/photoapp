@@ -23,10 +23,31 @@ import numpy as np
 from PIL import Image
 
 from config import FORBIDDEN_FACE_GENERATORS
+from . import memory as _memory
 
 _lama = None
 _lama_lock = threading.Lock()
 _lama_failed = False
+
+
+def _evict_lama():
+    global _lama
+    _lama = None
+
+
+_memory.register("lama", _evict_lama)
+
+
+def get_lama():
+    """Carrega o LaMa de forma preguiçosa e thread-safe.
+
+    Antes de carregar, descarrega outros modelos pesados (Real-ESRGAN) para
+    caber nos 512 MB do plano free.
+    """
+    global _lama, _lama_failed
+    _memory.evict(keep="lama")
+    if _lama is not None or _lama_failed:
+        return _lama
 
 
 def _forbidden_present():

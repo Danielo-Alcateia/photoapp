@@ -22,11 +22,21 @@ import cv2
 import numpy as np
 
 from config import DEFAULT_UPSCALE, FORBIDDEN_FACE_GENERATORS, MODELS_DIR
+from . import memory as _memory
 
 _model = None
 _model_scale: Optional[int] = None
 _lock = threading.Lock()
 _failed = False
+
+
+def _evict_model():
+    global _model, _model_scale, _failed
+    _model = None
+    _model_scale = None
+
+
+_memory.register("upscale", _evict_model)
 
 # Pesos oficiais do Real-ESRGAN (rede RRDBNet focada em texturas).
 WEIGHTS = {
@@ -60,6 +70,7 @@ def ensure_weights(scale: int) -> Path:
 def get_model(scale: int):
     global _model, _model_scale, _failed
     scale = scale if scale in (2, 4) else DEFAULT_UPSCALE
+    _memory.evict(keep="upscale")
     if _model is not None and _model_scale == scale:
         return _model
     if _failed:
