@@ -10,6 +10,7 @@ async function postImage(path, blob, extra = {}, headerMap = {}) {
   const form = new FormData();
   form.append("image", blob, "image.png");
   for (const [key, value] of Object.entries(extra)) {
+    if (value === null || value === undefined) continue;
     if (value instanceof Blob) form.append(key, value, `${key}.png`);
     else form.append(key, value);
   }
@@ -58,7 +59,12 @@ export const api = {
   },
 
   removeWatermarkAI(imageBlob, maskBlob, prompt = "") {
-    return postImage("/api/inpaint-ai", imageBlob, { mask: maskBlob, prompt });
+    return postImage(
+      "/api/inpaint-ai",
+      imageBlob,
+      { mask: maskBlob, prompt, mode: "auto" },
+      { decision: "X-Decision" }
+    );
   },
 
   improveLighting(imageBlob, strength = 1.0) {

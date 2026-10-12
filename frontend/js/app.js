@@ -18,7 +18,6 @@ const els = {
   brushCancel: $("brushCancel"),
   brushUndo: $("brushUndo"),
   aiRow: $("aiRow"),
-  aiToggle: $("aiToggle"),
   btnWatermark: $("btnWatermark"),
   btnLighting: $("btnLighting"),
   btnUpscale: $("btnUpscale"),
@@ -172,21 +171,29 @@ async function runUpscale() {
 
 async function runInpaint() {
   if (state.busy) return;
-  if (brush.isEmpty()) {
+  const useAI = state.aiAvailable;
+  const empty = brush.isEmpty();
+  if (empty && !useAI) {
     toast("Pinte a marca d'água com o dedo primeiro.", "error");
     return;
   }
-  const useAI = state.aiAvailable && els.aiToggle?.checked;
   try {
-    setLoading(true, useAI ? "Removendo com IA (FLUX Fill)... pode levar ~30s" : "Removendo marca d'água...");
-    const maskBlob = await brush.toBlob();
-    // dilate=0 -> o backend escolhe automaticamente conforme a resolução.
+    setLoading(
+      true,
+      useAI
+        ? empty
+          ? "Detectando e removendo com IA..."
+          : "Removendo com IA... pode levar ~30s"
+        : "Removendo marca d'água..."
+    );
+    const maskBlob = empty ? null : await brush.toBlob();
     const r = useAI
       ? await api.removeWatermarkAI(state.current, maskBlob)
       : await api.removeWatermark(state.current, maskBlob, 0);
     await applyResult(r.blob, r.engine, r.width, r.height);
     exitMaskMode();
-    toast(useAI ? "Marca removida com IA." : "Marca d'água removida.");
+    if (r.decision) toast(`IA: ${r.decision}`);
+    else toast(useAI ? "Marca removida com IA." : "Marca d'água removida.");
   } catch (err) {
     toast(err.message, "error");
   } finally {

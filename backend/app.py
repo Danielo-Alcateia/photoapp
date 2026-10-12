@@ -14,22 +14,26 @@ from __future__ import annotations
 import importlib.util
 import os
 
+import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from config import (
     ALLOWED_EXTENSIONS,
+    AUTO_MAX_CALLS,
     DEFAULT_UPSCALE,
     FRONTEND_DIR,
     INPAINT_LITTLE_RAM,
     MAX_CONTENT_LENGTH,
     MODELS_DIR,
-    REPLICATE_MODEL,
+    REPLICATE_MODEL_ERASER,
+    REPLICATE_MODEL_FILL,
     UPSCALE_LITTLE_RAM,
 )
 from image_io import decode_image, decode_mask, encode, limit_size
 from processors import improve_lighting, improve_resolution, remove_watermark
-from processors.ai_inpaint import ai_available, remove_watermark_ai
+from processors.ai_inpaint import ai_available, bria_erase, flux_fill
+from processors.auto_edit import run_auto
 from processors.watermark import detect_watermark, encode_mask
 
 app = Flask(__name__, static_folder=None)
@@ -42,6 +46,8 @@ CORS(
         "X-Height",
         "X-Watermark-Found",
         "X-Watermark-Boxes",
+        "X-Decision",
+        "X-Score",
     ],
 )
 
@@ -99,7 +105,10 @@ def health():
             "max_upload_mb": MAX_CONTENT_LENGTH // (1024 * 1024),
             "ai": {
                 "available": ai_available(),
-                "engine": REPLICATE_MODEL,
+                "auto": True,
+                "engine_fill": REPLICATE_MODEL_FILL,
+                "engine_eraser": REPLICATE_MODEL_ERASER,
+                "max_paid_calls": AUTO_MAX_CALLS,
             },
         }
     )
@@ -149,16 +158,42 @@ def api_inpaint():
 
 @app.post("/api/inpaint-ai")
 def api_inpaint_ai():
-    """Remoção com IA (FLUX.1 Fill via Replicate) — opcional e pago por uso."""
+    """Remoção com IA (Replicate) — ``auto`` (padrão), ``flux``, ``bria``, ``combo`` ou ``free``.
+
+    No modo ``auto`` o sistema analisa a imagem, escolhe/encadeia o melhor motor
+    (Telea grátis / Bria Eraser / FLUX Fill), verifica o resultado e devolve o
+    melhor, respeitando o teto de chamadas pagas (``AUTO_MAX_CALLS``).
+    """
     try:
         if not ai_available():
             raise ValueError("Modo IA indisponível: defina REPLICATE_API_TOKEN no servidor.")
         img, _ = _get_image("image")
-        if "mask" not in request.files:
-            raise ValueError("Campo 'mask' ausente. Detecte ou pinte a marca d'água antes.")
-        mask = decode_mask(request.files["mask"], img.shape[:2])
+        mask = decode_mask(request.files["mask"], img.shape[:2]) if "mask" in request.files else None
         prompt = request.form.get("prompt", "")
-        out, engine = remove_watermark_ai(img, mask, prompt=prompt)
+        mode = request.form.get("mode", "auto").strip().lower()
+
+        if mode == "auto":
+            if mask is None:
+                mask = np.zeros(img.shape[:2], np.uint8)
+            out, report = run_auto(img, mask, prompt=prompt)
+            decision = f"{report['decision']} | US${report['cost_usd']:.3f}"
+            return _out(out, report["engine"], {"X-Decision": decision, "X-Score": str(report["score"])})
+
+        if mask is None:
+            raise ValueError("Campo 'mask' ausente. Detecte ou pinte a marca d'água antes.")
+
+        if mode in ("flux", "pro"):
+            out, engine = flux_fill(img, mask, prompt=prompt)
+        elif mode == "bria":
+            out, engine = bria_erase(img, mask)
+        elif mode == "combo":
+            erased, _ = bria_erase(img, mask)
+            out, engine = flux_fill(erased, mask, prompt=prompt)
+            engine = f"combo ({engine})"
+        elif mode == "free":
+            out, engine = remove_watermark(img, mask)
+        else:
+            raise ValueError(f"Modo IA desconhecido: '{mode}'.")
         return _out(out, engine)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

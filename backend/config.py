@@ -71,16 +71,36 @@ INPAINT_ENGINE = os.environ.get("PHOTOAPP_INPAINT_ENGINE", "auto").lower()
 INPAINT_LITTLE_RAM = INPAINT_ENGINE == "opencv" or (INPAINT_ENGINE == "auto" and LOW_RAM)
 
 # ---------------------------------------------------------------------------
-# Modo IA opcional (FLUX.1 Fill via Replicate) - pago por uso, OFF por padrão
+# Modo IA opcional (Replicate) - pago por uso, OFF por padrão
 # ---------------------------------------------------------------------------
 # Só é habilitado se REPLICATE_API_TOKEN existir no ambiente do servidor.
-# Custo típico ~US$0,02-0,05 por foto. Use o modelo mais barato (fill-dev) por
-# padrão; para o topo de linha, defina REPLICATE_MODEL=black-forest-labs/flux-fill-pro.
+# Dois modelos, cada um cobre a fraqueza do outro:
+#   * flux_fill  -> realismo/pintura (inpainting generativo)
+#   * bria_erase -> remoção pura (apaga sem deixar rastro)
+# O orquestrador (processors/auto_edit.py) escolhe/encadeia automaticamente.
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
-REPLICATE_MODEL = os.environ.get("REPLICATE_MODEL", "black-forest-labs/flux-fill-dev").strip()
-REPLICATE_TIMEOUT = int(os.environ.get("REPLICATE_TIMEOUT", "90"))
+# Retrocompat: REPLICATE_MODEL define o motor de pintura (fill).
+REPLICATE_MODEL = os.environ.get("REPLICATE_MODEL", "black-forest-labs/flux-fill-pro").strip()
+REPLICATE_MODEL_FILL = os.environ.get("REPLICATE_MODEL_FILL", REPLICATE_MODEL).strip()
+REPLICATE_MODEL_ERASER = os.environ.get("REPLICATE_MODEL_ERASER", "bria/eraser").strip()
+REPLICATE_TIMEOUT = int(os.environ.get("REPLICATE_TIMEOUT", "120"))
 # Limita o maior lado enviado à IA (menos custo/latência). 0 = sem limite.
 AI_MAX_DIM = int(os.environ.get("PHOTOAPP_AI_MAX_DIM", "1600"))
+# Máscara do Bria Eraser: branco = apagar (igual à nossa). Se a verificação
+# detectar que o resultado piorou, o orquestrador tenta automaticamente invertida.
+BRIA_MASK_INVERT = os.environ.get("BRIA_MASK_INVERT", "false").strip().lower() in ("1", "true", "yes")
+
+# Orquestrador automático (auto_edit):
+#   * AUTO_MAX_CALLS  -> teto de chamadas pagas por pedido (custo controlado)
+#   * AUTO_SCORE_MARGIN -> só gasta uma 2ª chamada se o 1º resultado ficar
+#     acima do limiar por esta margem (evita gasto desnecessário).
+#   * AUTO_RESIDUAL_THRESHOLD -> acima disso a edição é considerada "não limpa".
+AUTO_MAX_CALLS = int(os.environ.get("AUTO_MAX_CALLS", "2"))
+AUTO_RESIDUAL_THRESHOLD = float(os.environ.get("AUTO_RESIDUAL_THRESHOLD", "0.18"))
+
+# Custo estimado por chamada (US$) - usado só para exibir no frontend.
+COST_FILL_USD = float(os.environ.get("COST_FILL_USD", "0.045"))
+COST_ERASER_USD = float(os.environ.get("COST_ERASER_USD", "0.035"))
 
 # Limite de thread do OpenCV (evita travar a UI em máquinas pequenas).
 try:

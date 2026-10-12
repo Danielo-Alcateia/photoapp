@@ -1,5 +1,5 @@
 // Service Worker do PhotoApp - cache do app shell + PWA instalável.
-const CACHE = "photoapp-v4";
+const CACHE = "photoapp-v5";
 
 const APP_SHELL = [
   "./",

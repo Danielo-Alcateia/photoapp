@@ -1,11 +1,16 @@
-"""Modo IA opcional: remoção de marca d'água com FLUX.1 Fill (via Replicate).
+"""Motores de IA opcionais (Replicate) — pagos por uso e OFF por padrão.
 
-Pago por uso e DESLIGADO por padrão: só roda quando ``REPLICATE_API_TOKEN``
-estiver definido no servidor E o usuário ligar o botão "Modo IA" no app.
-O token fica SEMPRE no servidor (nunca é enviado ao navegador).
+Dois modelos, cada um cobre a fraqueza do outro:
+  * ``flux_fill``  (black-forest-labs/flux-fill-*) -> inpainting generativo:
+    reconstrói textura/realismo dentro da máscara.
+  * ``bria_erase`` (bria/eraser) -> remoção pura: apaga objeto/marca e
+    reconstrói o fundo sem "alucinar".
 
-Fidelidade: o resultado da IA é aplicado SOMENTE dentro da máscara da marca
-d'água, com transição suave; todo o resto da foto permanece idêntico.
+O orquestrador automático (``processors/auto_edit.py``) decide sozinho qual
+usar e/ou encadear os dois.
+
+Fidelidade: o resultado da IA é aplicado SOMENTE dentro da máscara, com
+transição suave; o resto da foto permanece idêntico ao original.
 
 Sem novas dependências: usa urllib (stdlib).
 """
@@ -23,7 +28,8 @@ import numpy as np
 from config import (
     AI_MAX_DIM,
     REPLICATE_API_TOKEN,
-    REPLICATE_MODEL,
+    REPLICATE_MODEL_ERASER,
+    REPLICATE_MODEL_FILL,
     REPLICATE_TIMEOUT,
 )
 
@@ -33,17 +39,20 @@ _API = "https://api.replicate.com/v1"
 _HTTP_HINTS = {
     401: "Token do Replicate inválido (REPLICATE_API_TOKEN).",
     402: "Sem créditos no Replicate — adicione crédito na conta.",
-    404: f"Modelo '{REPLICATE_MODEL}' não encontrado no Replicate.",
+    404: "Modelo não encontrado no Replicate (verifique REPLICATE_MODEL_*).",
     422: "A API recusou a entrada (imagem ou máscara inválidas).",
     429: "Muitas requisições ao Replicate — tente de novo em instantes.",
 }
 
 
 def ai_available() -> bool:
-    """True se o modo IA está configurado (token presente)."""
+    """True se os motores de IA estão configurados (token presente)."""
     return bool(REPLICATE_API_TOKEN)
 
 
+# ---------------------------------------------------------------------------
+# Cliente HTTP genérico do Replicate
+# ---------------------------------------------------------------------------
 def _data_uri(img: np.ndarray) -> str:
     ok, buf = cv2.imencode(".png", img)
     if not ok:
@@ -74,8 +83,58 @@ def _fetch_bytes(url: str) -> bytes:
         return resp.read()
 
 
+def _call_model(model: str, input_dict: dict, timeout: int | None = None) -> list[str]:
+    """Roda um modelo do Replicate e devolve as URLs das imagens de saída."""
+    if not REPLICATE_API_TOKEN:
+        raise ValueError("Motores de IA não configurados. Defina REPLICATE_API_TOKEN no servidor.")
+    timeout = timeout or REPLICATE_TIMEOUT
+
+    pred = _request(
+        "POST",
+        f"{_API}/models/{model}/predictions",
+        {"input": input_dict},
+        prefer="wait=60",
+        timeout=75,
+    )
+    deadline = time.time() + timeout
+    while pred.get("status") in ("starting", "processing") and time.time() < deadline:
+        time.sleep(2)
+        get_url = (pred.get("urls") or {}).get("get")
+        if not get_url:
+            break
+        pred = _request("GET", get_url, timeout=30)
+
+    if pred.get("status") != "succeeded":
+        raise RuntimeError(f"A IA '{model}' não concluiu (status={pred.get('status')}). {str(pred.get('error'))[:160]}")
+
+    out = pred.get("output")
+    if isinstance(out, str):
+        return [out]
+    if isinstance(out, list):
+        urls = [u for u in out if isinstance(u, str)]
+        if urls:
+            return urls
+    if isinstance(out, dict) and isinstance(out.get("url"), str):
+        return [out["url"]]
+    raise RuntimeError("A IA não retornou imagem.")
+
+
+def _decode_first(urls: list[str]) -> np.ndarray:
+    arr = cv2.imdecode(np.frombuffer(_fetch_bytes(urls[0]), np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise RuntimeError("Falha ao ler a imagem retornada pela IA.")
+    return arr
+
+
+# ---------------------------------------------------------------------------
+# Preparo e composição (compartilhados pelos motores)
+# ---------------------------------------------------------------------------
 def _prepare(bgr: np.ndarray, mask: np.ndarray, dilate: int):
-    """Recorta a máscara, dilata e reduz a entrada para caber no custo latência."""
+    """Normaliza a máscara, dilata e reduz a entrada para limitar custo/latência.
+
+    Retorna ``(img_ai, mask_ai, binary_full)`` — ``binary_full`` na resolução
+    original, usado na composição final.
+    """
     h, w = bgr.shape[:2]
     if mask.ndim == 3:
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
@@ -97,61 +156,65 @@ def _prepare(bgr: np.ndarray, mask: np.ndarray, dilate: int):
     return img_ai, mask_ai, binary
 
 
-def remove_watermark_ai(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", dilate: int = 6) -> tuple[np.ndarray, str]:
-    """Remove a marca d'água com FLUX.1 Fill. Retorna ``(imagem_bgr, motor)``."""
-    if not REPLICATE_API_TOKEN:
-        raise ValueError("Modo IA não configurado. Defina REPLICATE_API_TOKEN no servidor.")
+def _composite(arr: np.ndarray, bgr: np.ndarray, binary_full: np.ndarray) -> np.ndarray:
+    """Cola o resultado da IA apenas dentro da máscara (resto fica idêntico)."""
+    h, w = bgr.shape[:2]
+    if arr.shape[:2] != (h, w):
+        arr = cv2.resize(arr, (w, h), interpolation=cv2.INTER_LANCZOS4)
+    sigma = max(1.0, min(h, w) * 0.002)
+    alpha = cv2.GaussianBlur(binary_full, (0, 0), sigma).astype(np.float32) / 255.0
+    alpha = alpha[..., None]
+    return (arr.astype(np.float32) * alpha + bgr.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
 
+
+# ---------------------------------------------------------------------------
+# Motores
+# ---------------------------------------------------------------------------
+def flux_fill(
+    bgr: np.ndarray,
+    mask: np.ndarray,
+    prompt: str = "",
+    dilate: int = 6,
+    seed: int | None = None,
+    steps: int | None = None,
+    model: str | None = None,
+) -> tuple[np.ndarray, str]:
+    """Inpainting generativo (FLUX Fill). ``mask``: branco = preencher."""
+    model = model or REPLICATE_MODEL_FILL
     h, w = bgr.shape[:2]
     img_ai, mask_ai, binary_full = _prepare(bgr, mask, dilate)
     if int(np.count_nonzero(mask_ai)) == 0:
         raise ValueError("Máscara vazia — detecte ou pinte a marca d'água antes.")
 
-    payload = {
-        "input": {
-            "image": _data_uri(img_ai),
-            # FLUX Fill: branco = área a preencher, preto = preservado.
-            "mask": _data_uri(mask_ai),
-            "prompt": prompt or "",
-        }
-    }
+    inp = {"image": _data_uri(img_ai), "mask": _data_uri(mask_ai), "prompt": prompt or ""}
+    if seed is not None:
+        inp["seed"] = seed
+    if steps is not None:
+        inp["steps"] = steps
 
-    pred = _request(
-        "POST",
-        f"{_API}/models/{REPLICATE_MODEL}/predictions",
-        payload,
-        prefer="wait=60",
-        timeout=75,
-    )
+    arr = _decode_first(_call_model(model, inp))
+    return _composite(arr, bgr, binary_full), f"flux-fill ({model.split('/')[-1]})"
 
-    deadline = time.time() + REPLICATE_TIMEOUT
-    while pred.get("status") in ("starting", "processing") and time.time() < deadline:
-        time.sleep(2)
-        get_url = (pred.get("urls") or {}).get("get")
-        if not get_url:
-            break
-        pred = _request("GET", get_url, timeout=30)
 
-    if pred.get("status") != "succeeded":
-        raise RuntimeError(f"A IA não concluiu (status={pred.get('status')}). {str(pred.get('error'))[:160]}")
+def bria_erase(
+    bgr: np.ndarray,
+    mask: np.ndarray,
+    dilate: int = 6,
+    invert: bool = False,
+    model: str | None = None,
+) -> tuple[np.ndarray, str]:
+    """Remoção pura (Bria Eraser). ``invert`` manda a máscara invertida (branco = apagar)."""
+    model = model or REPLICATE_MODEL_ERASER
+    img_ai, mask_ai, binary_full = _prepare(bgr, mask, dilate)
+    if int(np.count_nonzero(mask_ai)) == 0:
+        raise ValueError("Máscara vazia — detecte ou pinte a marca d'água antes.")
 
-    out = pred.get("output")
-    if isinstance(out, list):
-        out = out[0] if out else None
-    if isinstance(out, dict):
-        out = out.get("url")
-    if not isinstance(out, str):
-        raise RuntimeError("A IA não retornou imagem.")
+    sent_mask = (255 - mask_ai) if invert else mask_ai
+    inp = {"image": _data_uri(img_ai), "mask": _data_uri(sent_mask)}
+    arr = _decode_first(_call_model(model, inp))
+    return _composite(arr, bgr, binary_full), f"bria-erase ({model.split('/')[-1]})"
 
-    arr = cv2.imdecode(np.frombuffer(_fetch_bytes(out), np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        raise RuntimeError("Falha ao ler a imagem retornada pela IA.")
-    if arr.shape[:2] != (h, w):
-        arr = cv2.resize(arr, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
-    # Cola o resultado da IA apenas dentro da máscara (resto fica idêntico).
-    sigma = max(1.0, min(h, w) * 0.002)
-    alpha = cv2.GaussianBlur(binary_full, (0, 0), sigma).astype(np.float32) / 255.0
-    alpha = alpha[..., None]
-    result = (arr.astype(np.float32) * alpha + bgr.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
-    return result, f"flux-fill ({REPLICATE_MODEL.split('/')[-1]})"
+# Retrocompat: wrapper antigo (usado pelo modo manual).
+def remove_watermark_ai(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", dilate: int = 6) -> tuple[np.ndarray, str]:
+    return flux_fill(bgr, mask, prompt=prompt, dilate=dilate)

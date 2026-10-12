@@ -15,12 +15,19 @@ services:
         value: "2400"
       - key: PHOTOAPP_UPSCALE
         value: "2"
-      # --- Modo IA opcional (FLUX.1 Fill via Replicate) ---
-      # Defina o token no painel do Render (Environment). Sem token, o botão
-      # "Modo IA" fica oculto e o app funciona normalmente (grátis).
+      # --- Modo IA automático (Replicate) ---
+      # Defina o token no painel do Render (Environment). Sem token, o app
+      # funciona normalmente no modo grátis (Telea local).
       - key: REPLICATE_API_TOKEN
         sync: false
-      - key: REPLICATE_MODEL
-        value: "black-forest-labs/flux-fill-dev"
+      # Motor de pintura (inpainting generativo) usado pelo Auto.
+      - key: REPLICATE_MODEL_FILL
+        value: "black-forest-labs/flux-fill-pro"
+      # Motor de remoção pura (o Auto encadeia: apagar -> refinar).
+      - key: REPLICATE_MODEL_ERASER
+        value: "bria/eraser"
+      # Teto de chamadas pagas por pedido no modo Auto.
+      - key: AUTO_MAX_CALLS
+        value: "2"
       - key: PHOTOAPP_AI_MAX_DIM
         value: "1600"
