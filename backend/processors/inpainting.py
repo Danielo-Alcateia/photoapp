@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from config import FORBIDDEN_FACE_GENERATORS
+from config import FORBIDDEN_FACE_GENERATORS, INPAINT_LITTLE_RAM
 from . import memory as _memory
 
 _lama = None
@@ -128,13 +128,19 @@ def remove_watermark(bgr: np.ndarray, mask: np.ndarray, dilate: int = 6) -> tupl
     crop_img = bgr[y0:y1, x0:x1]
     crop_mask = binary[y0:y1, x0:x1]
 
-    try:
-        out_crop = _lama_inpaint(crop_img, crop_mask)
-        engine = "lama"
-    except Exception as exc:
-        print(f"[inpainting] Fallback OpenCV Telea: {exc}")
+    if INPAINT_LITTLE_RAM:
+        # Plano free (~512 MB): LaMa + torch estouram a RAM (oomKilled). Usa o
+        # Telea (difusão determinística), que é leve e nunca derruba o container.
         out_crop = _opencv_inpaint(crop_img, crop_mask)
         engine = "opencv-telea"
+    else:
+        try:
+            out_crop = _lama_inpaint(crop_img, crop_mask)
+            engine = "lama"
+        except Exception as exc:
+            print(f"[inpainting] Fallback OpenCV Telea: {exc}")
+            out_crop = _opencv_inpaint(crop_img, crop_mask)
+            engine = "opencv-telea"
 
     # O LaMa faz padding para múltiplo de 8; reajusta ao tamanho do recorte.
     ch, cw = crop_img.shape[:2]

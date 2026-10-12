@@ -59,9 +59,16 @@ def _cgroup_memory_limit_mb() -> int | None:
 
 
 _MEM_MB = _cgroup_memory_limit_mb()
-UPSCALE_LITTLE_RAM = UPSCALE_ENGINE == "lanczos" or (
-    UPSCALE_ENGINE == "auto" and _MEM_MB is not None and _MEM_MB < 1024
-)
+LOW_RAM = _MEM_MB is not None and _MEM_MB < 1024
+
+UPSCALE_LITTLE_RAM = UPSCALE_ENGINE == "lanczos" or (UPSCALE_ENGINE == "auto" and LOW_RAM)
+
+# Inpainting (remover marca d'água): o LaMa + torch não cabem em 512 MB
+# (oomKilled no Render free). Abaixo de 1 GiB usamos o OpenCV Telea, que é
+# determinístico e usa pouquíssima RAM. Em máquinas grandes o LaMa segue.
+# Força manual: PHOTOAPP_INPAINT_ENGINE=lama|opencv|auto
+INPAINT_ENGINE = os.environ.get("PHOTOAPP_INPAINT_ENGINE", "auto").lower()
+INPAINT_LITTLE_RAM = INPAINT_ENGINE == "opencv" or (INPAINT_ENGINE == "auto" and LOW_RAM)
 
 # Limite de thread do OpenCV (evita travar a UI em máquinas pequenas).
 try:

@@ -21,6 +21,7 @@ from config import (
     ALLOWED_EXTENSIONS,
     DEFAULT_UPSCALE,
     FRONTEND_DIR,
+    INPAINT_LITTLE_RAM,
     MAX_CONTENT_LENGTH,
     MODELS_DIR,
     UPSCALE_LITTLE_RAM,
@@ -80,7 +81,11 @@ def health():
         {
             "status": "ok",
             "engines": {
-                "inpaint": "lama" if _has("simple_lama_inpainting") else "opencv-telea-fallback",
+                "inpaint": (
+                    "opencv-telea"
+                    if INPAINT_LITTLE_RAM
+                    else ("lama" if _has("simple_lama_inpainting") else "opencv-telea-fallback")
+                ),
                 "lighting": "opencv-clahe",
                 "upscale": (
                     f"lanczos-x{DEFAULT_UPSCALE}"
