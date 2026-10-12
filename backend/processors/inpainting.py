@@ -38,18 +38,6 @@ def _evict_lama():
 _memory.register("lama", _evict_lama)
 
 
-def get_lama():
-    """Carrega o LaMa de forma preguiçosa e thread-safe.
-
-    Antes de carregar, descarrega outros modelos pesados (Real-ESRGAN) para
-    caber nos 512 MB do plano free.
-    """
-    global _lama, _lama_failed
-    _memory.evict(keep="lama")
-    if _lama is not None or _lama_failed:
-        return _lama
-
-
 def _forbidden_present():
     for name in FORBIDDEN_FACE_GENERATORS:
         if importlib.util.find_spec(name) is not None:
@@ -58,8 +46,13 @@ def _forbidden_present():
 
 
 def get_lama():
-    """Carrega o LaMa de forma preguiçosa e thread-safe."""
+    """Carrega o LaMa de forma preguiçosa e thread-safe.
+
+    Antes de carregar, descarrega outros modelos pesados (Real-ESRGAN) para
+    caber nos 512 MB do plano free.
+    """
     global _lama, _lama_failed
+    _memory.evict(keep="lama")
     if _lama is not None or _lama_failed:
         return _lama
     with _lama_lock:

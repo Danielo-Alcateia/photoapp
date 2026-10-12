@@ -213,11 +213,51 @@ function exitMaskMode() {
 }
 
 function onWatermarkClick() {
-  if (state.maskMode) runInpaint();
-  else {
-    enterMaskMode();
-    toast("Pinte sobre a marca d'água com o dedo.", "info");
+  if (state.busy) return;
+  if (state.maskMode) {
+    runInpaint();
+    return;
   }
+  autoDetect();
+}
+
+// Detecta a marca d'água sozinho e carrega a máscara no pincel;
+// se nada for encontrado, entra no modo manual (pinta com o dedo).
+async function autoDetect() {
+  try {
+    setLoading(true, "Detectando marca d'água...");
+    const r = await api.detectWatermark(state.current);
+    enterMaskMode();
+    if (r.found === "1") {
+      await loadMaskIntoBrush(r.blob);
+      toast("Marca detectada — toque em Aplicar (ajuste com o pincel se precisar).", "info");
+    } else {
+      brush.clear();
+      toast("Nenhuma marca clara encontrada — pinte você mesmo.", "info");
+    }
+  } catch (err) {
+    enterMaskMode();
+    brush.clear();
+    toast(`${err.message} — pinte manualmente.`, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function loadMaskIntoBrush(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = () => {
+      const ctx = els.mask.getContext("2d");
+      ctx.clearRect(0, 0, els.mask.width, els.mask.height);
+      ctx.drawImage(im, 0, 0, els.mask.width, els.mask.height);
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    im.onerror = resolve;
+    im.src = url;
+  });
 }
 
 // ---------------------------------------------------------------------------

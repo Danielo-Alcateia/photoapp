@@ -6,7 +6,7 @@ const API_BASE =
   window.PHOTOAPP_API ||
   (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000");
 
-async function postImage(path, blob, extra = {}) {
+async function postImage(path, blob, extra = {}, headerMap = {}) {
   const form = new FormData();
   form.append("image", blob, "image.png");
   for (const [key, value] of Object.entries(extra)) {
@@ -30,6 +30,9 @@ async function postImage(path, blob, extra = {}) {
     width: parseInt(res.headers.get("X-Width") || "0", 10),
     height: parseInt(res.headers.get("X-Height") || "0", 10),
   };
+  for (const [key, header] of Object.entries(headerMap)) {
+    meta[key] = res.headers.get(header) || "";
+  }
   const outBlob = await res.blob();
   return { blob: outBlob, ...meta };
 }
@@ -39,6 +42,15 @@ export const api = {
 
   health() {
     return fetch(`${API_BASE}/api/health`).then((r) => r.json());
+  },
+
+  detectWatermark(imageBlob) {
+    return postImage(
+      "/api/detect-watermark",
+      imageBlob,
+      {},
+      { found: "X-Watermark-Found", boxes: "X-Watermark-Boxes" }
+    );
   },
 
   removeWatermark(imageBlob, maskBlob, dilate = 0) {

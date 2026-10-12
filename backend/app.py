@@ -27,10 +27,20 @@ from config import (
 )
 from image_io import decode_image, decode_mask, encode, limit_size
 from processors import improve_lighting, improve_resolution, remove_watermark
+from processors.watermark import detect_watermark, encode_mask
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
-CORS(app, expose_headers=["X-Engine", "X-Width", "X-Height"])
+CORS(
+    app,
+    expose_headers=[
+        "X-Engine",
+        "X-Width",
+        "X-Height",
+        "X-Watermark-Found",
+        "X-Watermark-Boxes",
+    ],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +92,30 @@ def health():
             "max_upload_mb": MAX_CONTENT_LENGTH // (1024 * 1024),
         }
     )
+
+
+@app.post("/api/detect-watermark")
+def api_detect_watermark():
+    """Detecta automaticamente a marca d'água e devolve a máscara em PNG.
+
+    Cabeçalhos:
+        X-Watermark-Found  -> "1" se encontrou, "0" caso contrário
+        X-Watermark-Boxes  -> "x,y,w,h;x,y,w,h;..." (coordenadas originais)
+    """
+    try:
+        img, _ = _get_image("image")
+        mask, boxes, found = detect_watermark(img)
+
+        headers = {
+            "X-Engine": "watermark-detect",
+            "X-Watermark-Found": "1" if found else "0",
+            "X-Watermark-Boxes": ";".join(f"{x},{y},{bw},{bh}" for (x, y, bw, bh) in boxes),
+        }
+        return _out(encode_mask(mask), "watermark-detect", headers)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"Falha ao detectar marca d'água: {exc}"}), 500
 
 
 @app.post("/api/inpaint")
