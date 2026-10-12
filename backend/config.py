@@ -61,14 +61,18 @@ def _cgroup_memory_limit_mb() -> int | None:
 _MEM_MB = _cgroup_memory_limit_mb()
 LOW_RAM = _MEM_MB is not None and _MEM_MB < 1024
 
-UPSCALE_LITTLE_RAM = UPSCALE_ENGINE == "lanczos" or (UPSCALE_ENGINE == "auto" and LOW_RAM)
+# Em RAM baixa (Render free = 512 MB) o torch NUNCA é carregado: as flags
+# abaixo são FORÇADAS, ignorando eventual override manual de engine. Assim é
+# impossível um ambiente pequeno tentar carregar LaMa/Real-ESRGAN e ser morto
+# por oomKilled. Em máquinas grandes o override manual segue valendo.
+UPSCALE_LITTLE_RAM = LOW_RAM or UPSCALE_ENGINE == "lanczos" or (UPSCALE_ENGINE == "auto" and LOW_RAM)
 
 # Inpainting (remover marca d'água): o LaMa + torch não cabem em 512 MB
 # (oomKilled no Render free). Abaixo de 1 GiB usamos o OpenCV Telea, que é
 # determinístico e usa pouquíssima RAM. Em máquinas grandes o LaMa segue.
-# Força manual: PHOTOAPP_INPAINT_ENGINE=lama|opencv|auto
+# Força manual (só fora de RAM baixa): PHOTOAPP_INPAINT_ENGINE=lama|opencv|auto
 INPAINT_ENGINE = os.environ.get("PHOTOAPP_INPAINT_ENGINE", "auto").lower()
-INPAINT_LITTLE_RAM = INPAINT_ENGINE == "opencv" or (INPAINT_ENGINE == "auto" and LOW_RAM)
+INPAINT_LITTLE_RAM = LOW_RAM or INPAINT_ENGINE == "opencv" or (INPAINT_ENGINE == "auto" and LOW_RAM)
 
 # ---------------------------------------------------------------------------
 # Modo IA opcional (Replicate) - pago por uso, OFF por padrão
@@ -92,11 +96,16 @@ BRIA_MASK_INVERT = os.environ.get("BRIA_MASK_INVERT", "false").strip().lower() i
 
 # Orquestrador automático (auto_edit):
 #   * AUTO_MAX_CALLS  -> teto de chamadas pagas por pedido (custo controlado)
-#   * AUTO_SCORE_MARGIN -> só gasta uma 2ª chamada se o 1º resultado ficar
-#     acima do limiar por esta margem (evita gasto desnecessário).
 #   * AUTO_RESIDUAL_THRESHOLD -> acima disso a edição é considerada "não limpa".
+#   * AUTO_EARLY_STOP -> se a 1ª chamada PAGA já vier boa (score <= valor),
+#     NÃO gasta a 2ª (economia de ~50%).
 AUTO_MAX_CALLS = int(os.environ.get("AUTO_MAX_CALLS", "2"))
 AUTO_RESIDUAL_THRESHOLD = float(os.environ.get("AUTO_RESIDUAL_THRESHOLD", "0.18"))
+AUTO_EARLY_STOP = float(os.environ.get("AUTO_EARLY_STOP_SCORE", "0.12"))
+
+# Cache LRU em memória da detecção de marca d'água (evita re-detectar a mesma
+# foto). Chave = hash do conteúdo. 0 desliga.
+DETECT_CACHE_MAX = int(os.environ.get("PHOTOAPP_DETECT_CACHE", "20"))
 
 # Custo estimado por chamada (US$) - usado só para exibir no frontend.
 COST_FILL_USD = float(os.environ.get("COST_FILL_USD", "0.045"))

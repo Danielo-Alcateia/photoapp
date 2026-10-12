@@ -45,6 +45,10 @@ _HTTP_HINTS = {
 }
 
 
+class ReplicateNoCredit(RuntimeError):
+    """Conta do Replicate sem crédito. Permite ao app devolver 402 amigável."""
+
+
 def ai_available() -> bool:
     """True se os motores de IA estão configurados (token presente)."""
     return bool(REPLICATE_API_TOKEN)
@@ -72,6 +76,10 @@ def _request(method: str, url: str, payload: dict | None = None, prefer: str | N
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="ignore")
+        # 402 (Payment Required) ou corpo dizendo "insufficient credit" = falta
+        # de crédito na conta. Vira exceção própria, sem nunca logar o token.
+        if exc.code == 402 or "insufficient credit" in detail.lower():
+            raise ReplicateNoCredit(f"Sem créditos no Replicate. {detail[:160]}".strip()) from exc
         msg = _HTTP_HINTS.get(exc.code, f"Erro {exc.code} na API do Replicate.")
         raise RuntimeError(f"{msg} {detail[:180]}".strip()) from exc
     except urllib.error.URLError as exc:

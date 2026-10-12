@@ -29,5 +29,14 @@ services:
       # Teto de chamadas pagas por pedido no modo Auto.
       - key: AUTO_MAX_CALLS
         value: "2"
+      # Early-stop: não gasta a 2ª chamada paga se a 1ª já vier boa.
+      - key: AUTO_EARLY_STOP_SCORE
+        value: "0.12"
+      # Acima disso a edição é considerada "não limpa".
+      - key: AUTO_RESIDUAL_THRESHOLD
+        value: "0.18"
       - key: PHOTOAPP_AI_MAX_DIM
         value: "1600"
+      # Cache LRU da detecção de marca d'água (0 desliga).
+      - key: PHOTOAPP_DETECT_CACHE
+        value: "20"

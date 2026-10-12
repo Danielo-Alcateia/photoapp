@@ -18,6 +18,11 @@ uploads/
 temp/
 *.log
 
+# Segredos / ambiente (NUNCA versionar; use .env.example como modelo)
+.env
+.env.*
+!.env.example
+
 # OS / editor
 .DS_Store
 Thumbs.db

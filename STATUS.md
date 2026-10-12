@@ -1,7 +1,20 @@
 # STATUS.md — Onde estamos
 
 > Diário vivo do projeto. **Atualize este arquivo ao fim de cada sessão.**
-> Última atualização: **2026-10-12** (sessão 2: orquestrador Auto NO AR).
+> Última atualização: **2026-10-12** (sessão 3: auditoria + otimização FREE 512 MB).
+
+## 0. ⚠️ SEGURANÇA — AÇÃO MANUAL URGENTE (rotacionar segredos)
+Três segredos foram expostos em chat e **devem ser rotacionados** (o valor antigo
+fica inválido a partir da rotação):
+1. **REPLICATE_API_TOKEN** — gere um novo em https://replicate.com/account/api-tokens
+   e atualize no Render (Environment). O antigo (`r8_Z5O…`) deve ser revogado.
+2. **Render API key** — revogue em https://dashboard.render.com/u/settings (API Keys)
+   e gere outra. A antiga (`rnd_cVQ…`) deve ser apagada.
+3. **HF token** (`hf_AswL…`) — revogue em https://huggingface.co/settings/tokens.
+
+Boas práticas já aplicadas no repo: `.env.example` criado; `.env` no `.gitignore`
+(e `.dockerignore`); **nenhum arquivo versionado contém segredo**; o token nunca é
+impresso em log (só usado no header `Authorization`).
 
 ## 1. Objetivo
 PWA de edição de fotos que remove marca d'água (inpainting), melhora iluminação
@@ -61,22 +74,60 @@ de IA de nuvem para o melhor resultado, sem o usuário escolher).
 - Live: Auto grátis → `200` + `X-Decision: Local | US$0.000`; `mode=flux` →
   `502 Insufficient credit` (integração OK).
 
+## 3.1 Auditoria (sessão 3) — correções aplicadas
+Auditoria completa do sistema para o plano FREE 512 MB. **Commit: `PENDENTE`**
+
+**Fidelidade/RAM (regras invioláveis) — mantidas:**
+- `_composite()` segue existindo e só altera pixels **dentro da máscara**.
+- Torch/GFPGAN/CodeFormer proibidos; `config.LOW_RAM` agora **força** os flags
+  `*_LITTLE_RAM` (Telea/LANCZOS) mesmo com override manual. `/api/health` não
+  importa torch (sem OOM). `memory.py` mantém só **1 modelo residente**.
+
+**Fixes desta sessão:**
+1. Detector full-image: `/api/detect-watermark` devolve **máscara central**
+   sugestiva (`X-Watermark-Suggested: 1`) quando nada é achado; frontend carrega
+   no pincel e avisa. Mensagem do Auto mais clara.
+2. Dockerfile: prefetch **não-fatal** (`|| echo`) + ordem requirements → torch
+   CPU → requirements-ai documentada.
+3. Service Worker **v6** com **stale-while-revalidate** + fallback de navegação.
+4. `render.yaml`: + `AUTO_EARLY_STOP_SCORE`, `AUTO_RESIDUAL_THRESHOLD`,
+   `PHOTOAPP_DETECT_CACHE`.
+5. **Early-stop**: 1ª chamada paga boa (score ≤ 0.12) → não gasta a 2ª (economia
+   ~50%).
+6. **402 no_credit**: `ReplicateNoCredit` → `{error:"no_credit", fallback:"opencv-telea"}`;
+   frontend cai no grátis automaticamente.
+7. **Cache LRU** (20) na detecção de marca d'água (por hash do conteúdo).
+8. **Segurança**: `.env.example`, `.env` no `.gitignore`/`.dockerignore`, aviso
+   de rotação (seção 0). Nenhum segredo versionado; token não vai para log.
+
+**Testes (13/13 mockados + live local):**
+- 13/13 PASS (`wm_auto_test.py`): Local liso · Bria→FLUX · budget=1 · área grande ·
+  máscara vazia autodetectada · falha paga cai no Local · early-stop · fallback
+  central · erro claro sem fallback · rota auto 200 + X-Decision · rota 402 ·
+  detect sugere central · cache LRU.
+- Local (servidor real): `/api/detect-watermark` (teste.jpg) → `found=0,
+  suggested=1`; `/api/inpaint-ai?mode=auto` → `200`, `X-Decision: Local |
+  US$0.000`, `X-Engine: lama` (dev), `X-Score: 0.123`.
+
 ## 4. PRÓXIMOS PASSOS
-1. Usuário: adicionar cartão/crédito no Replicate e **rotacionar o token**
-   (o atual ficou exposto no chat) → atualizar `REPLICATE_API_TOKEN` no Render.
-   Rotacionar também a API key do Render (exposta no chat).
+1. Usuário (URGENTE): ver **seção 0** — rotacionar `REPLICATE_API_TOKEN`,
+   API key do Render e token HF; e adicionar cartão internacional/crédito no
+   Replicate (só aceita cartão internacional — não aceita Pix).
 2. Após crédito: teste live do caminho pago (Bria/FLUX/combo) na `teste.jpg`.
-3. (Futuro) Detecção de marca d'água **full-image** — hoje o Auto, com máscara
-   vazia, pede para pintar se o detector não achar.
+3. (Futuro) Detecção de marca d'água **full-image**: hoje o detector devolve uma
+   **máscara central sugestiva** (`X-Watermark-Suggested: 1`) que o usuário
+   ajusta no pincel; evolução = detecção real de overlay semitransparente.
 
 ## 5. Decisões travadas (com o usuário)
 - Interface: **só o botão Auto** (sem seletor de modos).
-- Auto pode gastar **até 2 chamadas pagas** por pedido (Telea grátis sempre 1º).
-- Mostrar **qual motor foi usado + custo estimado** (toast).
-- Detecção automática de máscara **incluída** (quando a máscara vier vazia).
+- Auto pode gastar **até 2 chamadas pagas** por pedido (Telea grátis sempre 1º),
+  com **early-stop** (não gasta a 2ª se a 1ª já vier boa).
+- Mostrar **qual motor foi usado + custo estimado** (toast / `X-Decision`).
+- Detecção automática de máscara **incluída** (máscara vazia → detector →
+  fallback central sugestivo).
 - Melhor modelo escolhido: **FLUX.1 Fill [pro]** (`black-forest-labs/flux-fill-pro`).
 - Combo recomendado: **Bria Eraser → FLUX Fill pro** (apagar + refinar).
-- Token: será **rotacionado** pelo usuário (ficou exposto no chat).
+- Tokens: **devem ser rotacionados** (ver seção 0).
 
 ## 6. Fatos técnicos que importam
 - `flux-fill-pro`: input `image`, `mask` (**branco = preencher**), `prompt`,
@@ -86,9 +137,16 @@ de IA de nuvem para o melhor resultado, sem o usuário escolher).
   estiver errada, o resultado fica ruim e a verificação descarta (o fallback
   assume).
 - Render free = 512 MB → LaMa/torch dão `oomKilled`; usar Telea na nuvem.
-- Prefetch de pesos agora é **não-fatal** (contorna HTTP 500 do GitHub).
-- Service worker é cache-first → **bumpar a versão** do cache a cada deploy.
+  `config.LOW_RAM` **força** `INPAINT_LITTLE_RAM`/`UPSCALE_LITTLE_RAM` mesmo que
+  o engine seja setado manualmente — impossível carregar torch no free.
+- `/api/health` **nunca** importa torch (usa `importlib.util.find_spec`).
+- Prefetch de pesos é **não-fatal** (script com try/except + `|| echo` no Dockerfile).
+- Service worker **v6** com **stale-while-revalidate** (abre do cache mesmo com
+  o Render "dormindo"); bumpar a versão do cache a cada deploy.
 - Sem o token do Replicate, o app volta ao modo grátis automaticamente.
+- Erro de crédito do Replicate vira **HTTP 402** `{error:"no_credit", fallback:"opencv-telea"}`
+  e o frontend cai automaticamente no grátis (Telea).
+- Detecção de marca tem **cache LRU em memória** (por hash do conteúdo; default 20).
 
 ## 7. Comandos rápidos
 ```powershell
@@ -99,9 +157,10 @@ Invoke-RestMethod https://photoapp-ywlg.onrender.com/api/health
 ```
 
 ## 8. Pendências / riscos
-- Conta Replicate **sem crédito** → testes de IA ao vivo bloqueados até recarga.
-- O "juiz automático" (`score`) é heurístico: às vezes roda 2 chamadas sem
-  precisar ou escolhe um resultado um pouco pior. Ajustável por
-  `AUTO_RESIDUAL_THRESHOLD`.
-- Marca d'água que cobre a foto inteira: o detector de bordas não pega; precisa
-  de detecção full-image (trabalho futuro).
+- Conta Replicate **sem crédito** → testes de IA ao vivo bloqueados até recarga
+  (ver seção 0).
+- O "juiz automático" (`score`) é heurístico: pode escolher um resultado um pouco
+  pior. O custo agora é contido por `AUTO_EARLY_STOP` + `AUTO_MAX_CALLS`.
+- Marca d'água que cobre a foto inteira: o detector de bordas não pega; hoje o
+  sistema sugere a máscara central (ajustável). Detecção real de overlay
+  semitransparente = trabalho futuro.

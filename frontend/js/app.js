@@ -1,5 +1,5 @@
 // Lógica principal da interface (mobile-first).
-import { api } from "./api.js";
+import { api, ApiError } from "./api.js";
 import { Brush } from "./brush.js";
 
 const $ = (id) => document.getElementById(id);
@@ -187,9 +187,20 @@ async function runInpaint() {
         : "Removendo marca d'água..."
     );
     const maskBlob = empty ? null : await brush.toBlob();
-    const r = useAI
-      ? await api.removeWatermarkAI(state.current, maskBlob)
-      : await api.removeWatermark(state.current, maskBlob, 0);
+    let r;
+    try {
+      r = useAI
+        ? await api.removeWatermarkAI(state.current, maskBlob)
+        : await api.removeWatermark(state.current, maskBlob, 0);
+    } catch (err) {
+      // Sem crédito no Replicate (402): cai automaticamente no grátis (Telea).
+      if (useAI && err instanceof ApiError && (err.status === 402 || err.code === "no_credit")) {
+        toast("Sem crédito na IA — usando o motor grátis (Telea).", "info");
+        r = await api.removeWatermark(state.current, maskBlob, 0);
+      } else {
+        throw err;
+      }
+    }
     await applyResult(r.blob, r.engine, r.width, r.height);
     exitMaskMode();
     if (r.decision) toast(`IA: ${r.decision}`);
@@ -250,6 +261,11 @@ async function autoDetect() {
     if (r.found === "1") {
       await loadMaskIntoBrush(r.blob);
       toast("Marca detectada — toque em Aplicar (ajuste com o pincel se precisar).", "info");
+    } else if (r.suggested === "1") {
+      // Nada óbvio detectado (a marca pode cobrir a foto toda): carrega a
+      // máscara central sugerida para o usuário ajustar/apagar antes de aplicar.
+      await loadMaskIntoBrush(r.blob);
+      toast("Não achei a marca (pode cobrir a foto toda). Sugeri a faixa central — ajuste com o pincel.", "info");
     } else {
       brush.clear();
       toast("Nenhuma marca clara encontrada — pinte você mesmo.", "info");

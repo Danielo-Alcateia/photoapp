@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from config import (
+    AUTO_EARLY_STOP,
     AUTO_MAX_CALLS,
     AUTO_RESIDUAL_THRESHOLD,
     BRIA_MASK_INVERT,
@@ -27,7 +28,7 @@ from config import (
 )
 from .ai_inpaint import bria_erase, flux_fill
 from .inpainting import remove_watermark
-from .watermark import detect_watermark
+from .watermark import central_mask, detect_watermark
 
 # Limiares de análise (heurísticos, conservadores).
 _TEX_SMOOTH = 120.0      # variância do Laplaciano abaixo disso = fundo liso
@@ -149,22 +150,32 @@ def _run_engine(name: str, bgr: np.ndarray, binary: np.ndarray, prompt: str):
 # ---------------------------------------------------------------------------
 # Orquestração
 # ---------------------------------------------------------------------------
-def run_auto(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", budget: int | None = None):
+def run_auto(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", budget: int | None = None, central_fallback: bool = False):
     """Escolhe e executa o melhor caminho automaticamente.
 
     Retorna ``(melhor_bgr, relatório)``. Se a máscara vier vazia, tenta
-    detectá-la automaticamente antes.
+    detectá-la automaticamente antes. Se não achar e ``central_fallback`` for
+    True, usa uma máscara central sugestiva (o usuário ajusta antes de aplicar).
     """
     budget = AUTO_MAX_CALLS if budget is None else int(budget)
     binary = _binary(mask, bgr.shape[:2])
 
     detected = False
+    used_central = False
     if int(binary.sum()) == 0:
         auto_mask, _boxes, found = detect_watermark(bgr)
         if not found:
-            raise ValueError("Não consegui detectar a marca automaticamente. Pinte com o dedo e tente de novo.")
-        binary = auto_mask > 0
-        detected = True
+            if central_fallback:
+                binary = _binary(central_mask(bgr)[0], bgr.shape[:2])
+                used_central = True
+            else:
+                raise ValueError(
+                    "Não consegui detectar a marca automaticamente (ela pode cobrir a foto toda). "
+                    "Pinte sobre ela com o dedo e toque em Aplicar, ou peça o fallback central."
+                )
+        else:
+            binary = auto_mask > 0
+            detected = True
 
     feats = analyze(bgr, binary)
     primary, fallback = decide(feats)
@@ -194,7 +205,10 @@ def run_auto(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", budget: int | 
         s = score(out, binary)
         steps.append({"engine": name, "engine_id": engine, "score": round(s, 3), "cost_usd": round(c, 3)})
         results.append((s, out, engine, name))
-        if s <= AUTO_RESIDUAL_THRESHOLD:
+        # Early-stop: depois de uma chamada PAGA já boa, NÃO gastamos a 2ª
+        # (economia de ~50%). Para o grátis/fallback usamos o limiar residual.
+        stop_at = AUTO_EARLY_STOP if name in ("flux", "bria") else AUTO_RESIDUAL_THRESHOLD
+        if s <= stop_at:
             break
 
     if not results:
@@ -211,6 +225,7 @@ def run_auto(bgr: np.ndarray, mask: np.ndarray, prompt: str = "", budget: int | 
     report = {
         "mode": "auto",
         "auto_detected": detected,
+        "fallback": ("central" if used_central else None),
         "primary": _SHORT.get(primary, primary),
         "decision": " -> ".join(parts),
         "engine": best_engine,

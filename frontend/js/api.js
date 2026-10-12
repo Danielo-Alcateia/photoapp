@@ -6,6 +6,15 @@ const API_BASE =
   window.PHOTOAPP_API ||
   (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000");
 
+export class ApiError extends Error {
+  constructor(message, status = 0, code = "") {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function postImage(path, blob, extra = {}, headerMap = {}) {
   const form = new FormData();
   form.append("image", blob, "image.png");
@@ -17,14 +26,18 @@ async function postImage(path, blob, extra = {}, headerMap = {}) {
 
   const res = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let message = `HTTP ${res.status}`;
+    let code = "";
     try {
       const data = await res.json();
-      if (data && data.error) detail = data.error;
+      if (data) {
+        code = data.error || "";
+        message = data.message || data.error || message;
+      }
     } catch (_) {
       /* resposta não-JSON */
     }
-    throw new Error(detail);
+    throw new ApiError(message, res.status, code);
   }
   const meta = {
     engine: res.headers.get("X-Engine") || "",
@@ -50,7 +63,7 @@ export const api = {
       "/api/detect-watermark",
       imageBlob,
       {},
-      { found: "X-Watermark-Found", boxes: "X-Watermark-Boxes" }
+      { found: "X-Watermark-Found", boxes: "X-Watermark-Boxes", suggested: "X-Watermark-Suggested" }
     );
   },
 
@@ -58,12 +71,12 @@ export const api = {
     return postImage("/api/inpaint", imageBlob, { mask: maskBlob, dilate });
   },
 
-  removeWatermarkAI(imageBlob, maskBlob, prompt = "") {
+  removeWatermarkAI(imageBlob, maskBlob, prompt = "", fallback = "") {
     return postImage(
       "/api/inpaint-ai",
       imageBlob,
-      { mask: maskBlob, prompt, mode: "auto" },
-      { decision: "X-Decision" }
+      { mask: maskBlob, prompt, mode: "auto", fallback },
+      { decision: "X-Decision", score: "X-Score" }
     );
   },
 

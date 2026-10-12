@@ -22,6 +22,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # --- Camada 1: dependências ------------------------------------------------
+# Ordem importa para o cache: 1) núcleo, 2) torch/torchvision CPU (índice CPU
+# dedicado, bem menor que o wheel CUDA padrão do PyPI), 3) extras de IA (que
+# dependem do torch já instalado, evitando puxar outro build).
 COPY backend/requirements.txt backend/requirements.txt
 COPY backend/requirements-ai.txt backend/requirements-ai.txt
 RUN pip install --no-cache-dir --upgrade pip \
@@ -31,10 +34,12 @@ RUN pip install --no-cache-dir --upgrade pip \
  && pip uninstall -y gfpgan codeformer || true
 
 # --- Camada 2: pesos dos modelos (assados na imagem) -----------------------
+# O prefetch é OPCIONAL e NUNCA derruba o build (o download pode falhar com
+# HTTP 500 do GitHub); em runtime o peso é buscado sob demanda.
 COPY backend/config.py backend/config.py
 COPY backend/processors backend/processors
 COPY scripts/prefetch_weights.py scripts/prefetch_weights.py
-RUN python scripts/prefetch_weights.py
+RUN python scripts/prefetch_weights.py || echo "[prefetch] ignorado (nao-fatal)"
 
 # --- Camada 3: código ------------------------------------------------------
 COPY backend backend

@@ -16,10 +16,21 @@ NÃO usa rede neural nem qualquer modelo generativo. Determinístico.
 """
 from __future__ import annotations
 
+import hashlib
+import threading
+from collections import OrderedDict
+
 import cv2
 import numpy as np
 
+from config import DETECT_CACHE_MAX
+
 _WORK = 1280  # maior lado usado na detecção (equilíbrio velocidade/precisão)
+
+# Cache LRU em memória (por conteúdo da imagem): evita re-detectar a mesma foto
+# em chamadas repetidas (frontend + orquestrador). Leve (~máscara 8-bit).
+_cache: "OrderedDict[str, tuple]" = OrderedDict()
+_cache_lock = threading.Lock()
 
 # Limites do "anel de borda" onde marcas d'água costumam aparecer.
 _TOP_RATIO = 0.18
@@ -103,10 +114,48 @@ def _edge_mask(gray: np.ndarray, ring: np.ndarray) -> np.ndarray:
 
 
 def detect_watermark(bgr: np.ndarray) -> tuple[np.ndarray, list, bool]:
-    """Detecta marca d'água em ``bgr``.
+    """Detecta marca d'água em ``bgr`` (com cache LRU por conteúdo).
 
     Retorna ``(mask_na_resolução_original, boxes_em_px_originais, encontrado)``.
     """
+    key = None
+    if DETECT_CACHE_MAX > 0:
+        digest = hashlib.sha1(np.ascontiguousarray(bgr).tobytes()).hexdigest()
+        key = f"{bgr.shape}:{digest}"
+        with _cache_lock:
+            hit = _cache.get(key)
+            if hit is not None:
+                _cache.move_to_end(key)
+                return hit[0], list(hit[1]), hit[2]
+
+    result = _detect_watermark(bgr)
+
+    if key is not None:
+        with _cache_lock:
+            _cache[key] = (result[0], list(result[1]), result[2])
+            _cache.move_to_end(key)
+            while len(_cache) > DETECT_CACHE_MAX:
+                _cache.popitem(last=False)
+    return result
+
+
+def central_mask(bgr: np.ndarray, ratio: float = 0.15) -> tuple[np.ndarray, list]:
+    """Máscara de segurança no centro da foto (marca d'água "full-image").
+
+    Usada quando a detecção falha e o usuário pede o fallback: cobre ~15% da
+    imagem no centro — o usuário ainda ajusta/apaga com o pincel antes de aplicar.
+    """
+    h, w = bgr.shape[:2]
+    bw = max(1, int(round(w * ratio)))
+    bh = max(1, int(round(h * ratio)))
+    x0 = (w - bw) // 2
+    y0 = (h - bh) // 2
+    mask = np.zeros((h, w), np.uint8)
+    mask[y0 : y0 + bh, x0 : x0 + bw] = 255
+    return mask, [(x0, y0, bw, bh)]
+
+
+def _detect_watermark(bgr: np.ndarray) -> tuple[np.ndarray, list, bool]:
     h, w = bgr.shape[:2]
     scale = min(1.0, _WORK / max(h, w))
     zh, zw = max(1, int(round(h * scale))), max(1, int(round(w * scale)))

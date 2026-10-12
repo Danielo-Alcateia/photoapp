@@ -1,5 +1,9 @@
 // Service Worker do PhotoApp - cache do app shell + PWA instalável.
-const CACHE = "photoapp-v5";
+// Estratégia: STALE-WHILE-REVALIDATE no app shell (responde do cache na hora e
+// atualiza em segundo plano). Isso mantém o app usável mesmo quando o Render
+// free está "dormindo" (cold start lento): a UI abre instantânea do cache e a
+// nova versão entra na próxima abertura.
+const CACHE = "photoapp-v6";
 
 const APP_SHELL = [
   "./",
@@ -39,28 +43,44 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Atualiza o cache em segundo plano (revalidate) sem travar a resposta.
+function revalidate(request) {
+  return fetch(request)
+    .then((response) => {
+      if (response && (response.ok || response.type === "opaque")) {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    })
+    .catch(() => null);
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Nunca cachear chamadas de API nem uploads (precisam do servidor).
+  // Nunca cachear chamadas de API nem métodos não-GET (precisam do servidor).
   if (url.pathname.startsWith("/api/") || request.method !== "GET") {
     return;
   }
 
-  // App shell: cache-first com atualização em segundo plano.
+  // Navegação (abrir o app): responde do cache e revalida em segundo plano.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      caches.match("./index.html").then((cached) => {
+        const network = revalidate(request);
+        return cached || network.then((r) => r || caches.match("./index.html"));
+      })
+    );
+    return;
+  }
+
+  // App shell (stale-while-revalidate).
   event.respondWith(
     caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response && (response.ok || response.type === "opaque")) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
+      const network = revalidate(request);
+      return cached || network.then((r) => r || Response.error());
     })
   );
 });

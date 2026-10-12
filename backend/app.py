@@ -32,9 +32,9 @@ from config import (
 )
 from image_io import decode_image, decode_mask, encode, limit_size
 from processors import improve_lighting, improve_resolution, remove_watermark
-from processors.ai_inpaint import ai_available, bria_erase, flux_fill
+from processors.ai_inpaint import ReplicateNoCredit, ai_available, bria_erase, flux_fill
 from processors.auto_edit import run_auto
-from processors.watermark import detect_watermark, encode_mask
+from processors.watermark import central_mask, detect_watermark, encode_mask
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
@@ -46,6 +46,7 @@ CORS(
         "X-Height",
         "X-Watermark-Found",
         "X-Watermark-Boxes",
+        "X-Watermark-Suggested",
         "X-Decision",
         "X-Score",
     ],
@@ -126,9 +127,17 @@ def api_detect_watermark():
         img, _ = _get_image("image")
         mask, boxes, found = detect_watermark(img)
 
+        suggestion = False
+        if not found:
+            # Marca "full-image" (ou nada óbvio): devolve uma máscara central
+            # sugestiva (~15%) para o usuário ajustar/apagar antes de aplicar.
+            mask, boxes = central_mask(img)
+            suggestion = True
+
         headers = {
             "X-Engine": "watermark-detect",
             "X-Watermark-Found": "1" if found else "0",
+            "X-Watermark-Suggested": "1" if suggestion else "0",
             "X-Watermark-Boxes": ";".join(f"{x},{y},{bw},{bh}" for (x, y, bw, bh) in boxes),
         }
         return _out(encode_mask(mask), "watermark-detect", headers)
@@ -175,7 +184,8 @@ def api_inpaint_ai():
         if mode == "auto":
             if mask is None:
                 mask = np.zeros(img.shape[:2], np.uint8)
-            out, report = run_auto(img, mask, prompt=prompt)
+            use_central = request.form.get("fallback", "").strip().lower() == "central"
+            out, report = run_auto(img, mask, prompt=prompt, central_fallback=use_central)
             decision = f"{report['decision']} | US${report['cost_usd']:.3f}"
             return _out(out, report["engine"], {"X-Decision": decision, "X-Score": str(report["score"])})
 
@@ -195,6 +205,9 @@ def api_inpaint_ai():
         else:
             raise ValueError(f"Modo IA desconhecido: '{mode}'.")
         return _out(out, engine)
+    except ReplicateNoCredit as exc:
+        # 402 explícito: o frontend cai no grátis (Telea) automaticamente.
+        return jsonify({"error": "no_credit", "message": str(exc), "fallback": "opencv-telea"}), 402
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover
