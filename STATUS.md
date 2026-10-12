@@ -24,7 +24,7 @@ de IA de nuvem para o melhor resultado, sem o usuário escolher).
 
 ## 2. O que já está pronto e NO AR
 - App: https://photoapp-ywlg.onrender.com (Render free, Docker).
-- Commit em produção: `3466ca2` (branch `main`) — **Modo IA automático**.
+- Commit em produção: `afc0418` (branch `main`) — **Auditoria FREE 512 MB**.
 - Endpoints: `/api/health`, `/api/detect-watermark`, `/api/inpaint`,
   `/api/inpaint-ai`, `/api/lighting`, `/api/upscale`.
 - Detecção automática de marca d'água (`backend/processors/watermark.py`).
@@ -35,8 +35,8 @@ de IA de nuvem para o melhor resultado, sem o usuário escolher).
   `ai.engine_fill = black-forest-labs/flux-fill-pro`, `engine_eraser = bria/eraser`.
   → Caminho **grátis** verificado live (200, `X-Decision: Local | US$0.000`).
   → Caminho **pago** verificado live (chega no Replicate; retorna
-    "Insufficient credit"). Falta só o crédito + rotação do token.
-- Deploy IDs úteis: último = `dep-db6h3n49v7es73fdak20`.
+    **402 `no_credit`** — antes era 502 genérico). Falta só o crédito + rotação.
+- Deploy IDs úteis: últimos = `dep-db6i7ms9v7es7391ts30` e `dep-db6i7n6b5qgc73duk4tg`.
 
 ## 3. Histórico da última sessão (concluído)
 **Orquestrador automático ("Auto") — commit `3466ca2`, no ar e testado.**
@@ -75,7 +75,7 @@ de IA de nuvem para o melhor resultado, sem o usuário escolher).
   `502 Insufficient credit` (integração OK).
 
 ## 3.1 Auditoria (sessão 3) — correções aplicadas
-Auditoria completa do sistema para o plano FREE 512 MB. **Commit: `PENDENTE`**
+Auditoria completa do sistema para o plano FREE 512 MB. **Commit: `afc0418` (no ar).**
 
 **Fidelidade/RAM (regras invioláveis) — mantidas:**
 - `_composite()` segue existindo e só altera pixels **dentro da máscara**.
@@ -108,6 +108,10 @@ Auditoria completa do sistema para o plano FREE 512 MB. **Commit: `PENDENTE`**
 - Local (servidor real): `/api/detect-watermark` (teste.jpg) → `found=0,
   suggested=1`; `/api/inpaint-ai?mode=auto` → `200`, `X-Decision: Local |
   US$0.000`, `X-Engine: lama` (dev), `X-Score: 0.123`.
+- **Nuvem (Render, pós-deploy `afc0418`)**: health `ai` OK; `detect-watermark`
+  → `suggested=1`; `inpaint-ai?mode=auto` → `200`, `X-Decision: Local |
+  US$0.000`, `X-Engine: opencv-telea`; `mode=flux` → **402 `no_credit`**;
+  service worker em `photoapp-v6`.
 
 ## 4. PRÓXIMOS PASSOS
 1. Usuário (URGENTE): ver **seção 0** — rotacionar `REPLICATE_API_TOKEN`,
