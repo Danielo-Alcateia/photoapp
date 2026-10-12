@@ -1,3 +1,12 @@
+---
+title: PhotoApp - Edicao Cirurgica de Fotos
+colorFrom: gray
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # PhotoApp — PWA de Edição Cirúrgica de Fotos
 
 Aplicação web responsiva (PWA) com **três ferramentas cirúrgicas** de edição de fotos.

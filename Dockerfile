@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=10000 \
+    PORT=7860 \
     PHOTOAPP_MAX_DIM=2400 \
     PHOTOAPP_UPSCALE=2 \
     TORCH_HOME=/app/backend/models/torch \
@@ -40,8 +40,8 @@ RUN python scripts/prefetch_weights.py
 COPY backend backend
 COPY frontend frontend
 
-EXPOSE 10000
+EXPOSE 7860
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD ["python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:10000/api/health')"]
+    CMD ["python", "-c", "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','7860')+'/api/health')"]
 
 CMD ["python", "backend/app.py"]
