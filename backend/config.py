@@ -70,6 +70,18 @@ UPSCALE_LITTLE_RAM = UPSCALE_ENGINE == "lanczos" or (UPSCALE_ENGINE == "auto" an
 INPAINT_ENGINE = os.environ.get("PHOTOAPP_INPAINT_ENGINE", "auto").lower()
 INPAINT_LITTLE_RAM = INPAINT_ENGINE == "opencv" or (INPAINT_ENGINE == "auto" and LOW_RAM)
 
+# ---------------------------------------------------------------------------
+# Modo IA opcional (FLUX.1 Fill via Replicate) - pago por uso, OFF por padrão
+# ---------------------------------------------------------------------------
+# Só é habilitado se REPLICATE_API_TOKEN existir no ambiente do servidor.
+# Custo típico ~US$0,02-0,05 por foto. Use o modelo mais barato (fill-dev) por
+# padrão; para o topo de linha, defina REPLICATE_MODEL=black-forest-labs/flux-fill-pro.
+REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
+REPLICATE_MODEL = os.environ.get("REPLICATE_MODEL", "black-forest-labs/flux-fill-dev").strip()
+REPLICATE_TIMEOUT = int(os.environ.get("REPLICATE_TIMEOUT", "90"))
+# Limita o maior lado enviado à IA (menos custo/latência). 0 = sem limite.
+AI_MAX_DIM = int(os.environ.get("PHOTOAPP_AI_MAX_DIM", "1600"))
+
 # Limite de thread do OpenCV (evita travar a UI em máquinas pequenas).
 try:
     import cv2

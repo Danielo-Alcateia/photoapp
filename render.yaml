@@ -15,3 +15,12 @@ services:
         value: "2400"
       - key: PHOTOAPP_UPSCALE
         value: "2"
+      # --- Modo IA opcional (FLUX.1 Fill via Replicate) ---
+      # Defina o token no painel do Render (Environment). Sem token, o botão
+      # "Modo IA" fica oculto e o app funciona normalmente (grátis).
+      - key: REPLICATE_API_TOKEN
+        sync: false
+      - key: REPLICATE_MODEL
+        value: "black-forest-labs/flux-fill-dev"
+      - key: PHOTOAPP_AI_MAX_DIM
+        value: "1600"

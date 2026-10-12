@@ -24,10 +24,12 @@ from config import (
     INPAINT_LITTLE_RAM,
     MAX_CONTENT_LENGTH,
     MODELS_DIR,
+    REPLICATE_MODEL,
     UPSCALE_LITTLE_RAM,
 )
 from image_io import decode_image, decode_mask, encode, limit_size
 from processors import improve_lighting, improve_resolution, remove_watermark
+from processors.ai_inpaint import ai_available, remove_watermark_ai
 from processors.watermark import detect_watermark, encode_mask
 
 app = Flask(__name__, static_folder=None)
@@ -95,6 +97,10 @@ def health():
             },
             "face_fidelity_policy": "enforced (generative face reconstruction forbidden)",
             "max_upload_mb": MAX_CONTENT_LENGTH // (1024 * 1024),
+            "ai": {
+                "available": ai_available(),
+                "engine": REPLICATE_MODEL,
+            },
         }
     )
 
@@ -139,6 +145,25 @@ def api_inpaint():
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": f"Falha ao remover marca d'água: {exc}"}), 500
+
+
+@app.post("/api/inpaint-ai")
+def api_inpaint_ai():
+    """Remoção com IA (FLUX.1 Fill via Replicate) — opcional e pago por uso."""
+    try:
+        if not ai_available():
+            raise ValueError("Modo IA indisponível: defina REPLICATE_API_TOKEN no servidor.")
+        img, _ = _get_image("image")
+        if "mask" not in request.files:
+            raise ValueError("Campo 'mask' ausente. Detecte ou pinte a marca d'água antes.")
+        mask = decode_mask(request.files["mask"], img.shape[:2])
+        prompt = request.form.get("prompt", "")
+        out, engine = remove_watermark_ai(img, mask, prompt=prompt)
+        return _out(out, engine)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"Falha no modo IA: {exc}"}), 502
 
 
 @app.post("/api/lighting")

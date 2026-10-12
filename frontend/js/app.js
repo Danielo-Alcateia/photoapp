@@ -17,6 +17,8 @@ const els = {
   brushClear: $("brushClear"),
   brushCancel: $("brushCancel"),
   brushUndo: $("brushUndo"),
+  aiRow: $("aiRow"),
+  aiToggle: $("aiToggle"),
   btnWatermark: $("btnWatermark"),
   btnLighting: $("btnLighting"),
   btnUpscale: $("btnUpscale"),
@@ -45,6 +47,7 @@ const state = {
   maskMode: false,
   busy: false,
   comparing: false,
+  aiAvailable: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -173,14 +176,17 @@ async function runInpaint() {
     toast("Pinte a marca d'água com o dedo primeiro.", "error");
     return;
   }
+  const useAI = state.aiAvailable && els.aiToggle?.checked;
   try {
-    setLoading(true, "Removendo marca d'água...");
+    setLoading(true, useAI ? "Removendo com IA (FLUX Fill)... pode levar ~30s" : "Removendo marca d'água...");
     const maskBlob = await brush.toBlob();
     // dilate=0 -> o backend escolhe automaticamente conforme a resolução.
-    const r = await api.removeWatermark(state.current, maskBlob, 0);
+    const r = useAI
+      ? await api.removeWatermarkAI(state.current, maskBlob)
+      : await api.removeWatermark(state.current, maskBlob, 0);
     await applyResult(r.blob, r.engine, r.width, r.height);
     exitMaskMode();
-    toast("Marca d'água removida.");
+    toast(useAI ? "Marca removida com IA." : "Marca d'água removida.");
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -197,6 +203,10 @@ function enterMaskMode() {
   els.overlayHint.classList.remove("hidden");
   els.brushToolbar.classList.remove("hidden");
   els.brushToolbar.classList.add("flex");
+  if (state.aiAvailable) {
+    els.aiRow.classList.remove("hidden");
+    els.aiRow.classList.add("flex");
+  }
   els.btnWatermark.querySelector("[data-label]").textContent = "Aplicar";
   els.btnWatermark.classList.add("ring-2", "ring-amber-300");
 }
@@ -207,6 +217,8 @@ function exitMaskMode() {
   els.overlayHint.classList.add("hidden");
   els.brushToolbar.classList.add("hidden");
   els.brushToolbar.classList.remove("flex");
+  els.aiRow.classList.add("hidden");
+  els.aiRow.classList.remove("flex");
   const label = els.btnWatermark.querySelector("[data-label]");
   if (label) label.textContent = "Remover Marca d'Água";
   els.btnWatermark.classList.remove("ring-2", "ring-amber-300");
@@ -375,6 +387,7 @@ window.addEventListener("load", async () => {
 
   try {
     const health = await api.health();
+    state.aiAvailable = !!(health && health.ai && health.ai.available);
     showEngine("online");
     console.log("Backend:", health);
   } catch (err) {

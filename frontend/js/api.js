@@ -57,6 +57,10 @@ export const api = {
     return postImage("/api/inpaint", imageBlob, { mask: maskBlob, dilate });
   },
 
+  removeWatermarkAI(imageBlob, maskBlob, prompt = "") {
+    return postImage("/api/inpaint-ai", imageBlob, { mask: maskBlob, prompt });
+  },
+
   improveLighting(imageBlob, strength = 1.0) {
     return postImage("/api/lighting", imageBlob, { strength });
   },
