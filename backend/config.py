@@ -35,6 +35,34 @@ DEFAULT_UPSCALE = int(os.environ.get("PHOTOAPP_UPSCALE", "2"))
 # Em nuvem gratuita use ~2400 para caber na memória; em casa 8000.
 MAX_DIM = int(os.environ.get("PHOTOAPP_MAX_DIM", "8000"))
 
+# ---------------------------------------------------------------------------
+# Memória baixa (plano free, ~512 MB) -> desliga o Real-ESRGAN/torch
+# ---------------------------------------------------------------------------
+# O import do torch + RRDBNet sozinho já estoura 512 MB (oomKilled no Render
+# free). Por isso detectamos o limite do cgroup: abaixo de 1 GiB o /api/upscale
+# usa o fallback matemático LANCZOS + unsharp, sem torcar. Em qualquer outra
+# máquina (dev, VPS, GPU) o Real-ESRGAN segue sendo o motor escolhido.
+# Força manual: PHOTOAPP_UPSCALE_ENGINE=lanczos|realesrgan|auto
+UPSCALE_ENGINE = os.environ.get("PHOTOAPP_UPSCALE_ENGINE", "auto").lower()
+
+
+def _cgroup_memory_limit_mb() -> int | None:
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            with Path(path).open() as f:
+                value = f.read().strip()
+            if value.isdigit():
+                return int(value) // (1024 * 1024)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+_MEM_MB = _cgroup_memory_limit_mb()
+UPSCALE_LITTLE_RAM = UPSCALE_ENGINE == "lanczos" or (
+    UPSCALE_ENGINE == "auto" and _MEM_MB is not None and _MEM_MB < 1024
+)
+
 # Limite de thread do OpenCV (evita travar a UI em máquinas pequenas).
 try:
     import cv2

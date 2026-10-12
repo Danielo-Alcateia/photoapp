@@ -21,7 +21,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from config import DEFAULT_UPSCALE, FORBIDDEN_FACE_GENERATORS, MODELS_DIR
+from config import DEFAULT_UPSCALE, FORBIDDEN_FACE_GENERATORS, MODELS_DIR, UPSCALE_LITTLE_RAM
 from . import memory as _memory
 
 _model = None
@@ -112,6 +112,12 @@ def improve_resolution(bgr: np.ndarray, scale: int = DEFAULT_UPSCALE) -> tuple[n
     forbidden = _forbidden_present()
     if forbidden:
         print(f"[upscale] Pacote proibido detectado ({forbidden}); ignorado por política.")
+
+    if UPSCALE_LITTLE_RAM:
+        # Plano free (~512 MB): torch + RRDBNet não cabem na memória. Usa o
+        # fallback matemático LANCZOS + unsharp (sem IA, sem peso de RAM).
+        print("[upscale] Memória restrita detectada: usando LANCZOS (sem torch).")
+        return _fallback_upscale(bgr, scale), f"lanczos-x{scale}"
 
     loaded = get_model(scale)
     if loaded is not None:

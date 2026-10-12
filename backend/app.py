@@ -17,7 +17,14 @@ import os
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from config import ALLOWED_EXTENSIONS, DEFAULT_UPSCALE, FRONTEND_DIR, MAX_CONTENT_LENGTH, MODELS_DIR
+from config import (
+    ALLOWED_EXTENSIONS,
+    DEFAULT_UPSCALE,
+    FRONTEND_DIR,
+    MAX_CONTENT_LENGTH,
+    MODELS_DIR,
+    UPSCALE_LITTLE_RAM,
+)
 from image_io import decode_image, decode_mask, encode, limit_size
 from processors import improve_lighting, improve_resolution, remove_watermark
 
@@ -65,7 +72,11 @@ def health():
             "engines": {
                 "inpaint": "lama" if _has("simple_lama_inpainting") else "opencv-telea-fallback",
                 "lighting": "opencv-clahe",
-                "upscale": "realesrgan-rrdbnet" if _has("torch") else f"lanczos-x{DEFAULT_UPSCALE}-fallback",
+                "upscale": (
+                    f"lanczos-x{DEFAULT_UPSCALE}"
+                    if UPSCALE_LITTLE_RAM
+                    else ("realesrgan-rrdbnet" if _has("torch") else f"lanczos-x{DEFAULT_UPSCALE}-fallback")
+                ),
             },
             "face_fidelity_policy": "enforced (generative face reconstruction forbidden)",
             "max_upload_mb": MAX_CONTENT_LENGTH // (1024 * 1024),
